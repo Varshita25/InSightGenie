@@ -40,6 +40,7 @@ def categorical_bars(df: pd.DataFrame, max_cols: int = 12, top_k: int = 10) -> L
         fig, ax = _auto_fig()
         ax.bar([str(x) for x in vc.index], vc.values)
         ax.set_title(f"{c} – Top {top_k} categories")
+        ax.set_xticks(range(len(vc)))
         ax.set_xticklabels([str(x)[:16] for x in vc.index], rotation=45, ha="right")
         ax.set_ylabel("Count")
         figs.append(fig)

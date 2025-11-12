@@ -110,6 +110,7 @@ from core.report import build_html_report
 from core.utils import fig_to_base64
 from core.suggester import recommend_pairs, beginner_questions
 from core.qa import answer as qa_answer
+from core.safeops import safe_dataframe
 
 from core.exporter import build_pdf, build_ppt
 from core.hypothesis import generate_hypotheses
@@ -621,7 +622,7 @@ elif url:
         if st.session_state.df is None or st.session_state.info is None:
             st.error("Failed to load data from URL. Please check the URL and try again.")
             st.stop()
-elif not st.session_state.df:  # No data loaded yet
+elif st.session_state.df is None:  # No data loaded yet
     st.info("👈 Upload a CSV/XLSX or paste a URL to begin.")
     st.stop()
 
@@ -647,16 +648,16 @@ with tab_overview:
 
     # Snapshot + compact tables
     st.subheader("Dataset Snapshot")
-    st.dataframe(df.head(15), use_container_width=True)
+    safe_dataframe(df.head(15), use_container_width=True)
 
     c1, c2 = st.columns([1, 1])
     with c1:
         st.markdown("**Column Types (compact)**")
         ct_df = pd.DataFrame({"column": list(types.keys()), "type": list(types.values())})
-        st.dataframe(ct_df, use_container_width=True)
+        safe_dataframe(ct_df, use_container_width=True)
     with c2:
         st.markdown("**Missingness (%)**")
-        st.dataframe(profile["missing_by_col"], use_container_width=True)
+        safe_dataframe(profile["missing_by_col"], use_container_width=True)
 
     st.markdown("### Quick Visuals (compact)")
     num_figs = numeric_histograms(df, max_cols=4)
@@ -705,21 +706,21 @@ with tab_eda:
         "Non-Null": df.notna().sum().values,
         "Dtype": df.dtypes.astype(str).values
     })
-    st.dataframe(info_table, use_container_width=True)
+    safe_dataframe(info_table, use_container_width=True)
 
     # describe
     st.markdown("### Statistical Summary ")
-    st.dataframe(df.describe(include="all").transpose(), use_container_width=True)
+    safe_dataframe(df.describe(include="all").transpose(), use_container_width=True)
 
     # Data quality block
     st.markdown("### Data Quality — Missing • Outliers • Duplicates")
     q1, q2 = st.columns(2)
     with q1:
         st.markdown("**Missing by column**")
-        st.dataframe(missing_by_col(df), use_container_width=True)
+        safe_dataframe(missing_by_col(df), use_container_width=True)
     with q2:
         st.markdown("**IQR Outlier counts (numeric)**")
-        st.dataframe(iqr_outlier_counts(df), use_container_width=True)
+        safe_dataframe(iqr_outlier_counts(df), use_container_width=True)
     st.markdown(f"**Duplicate rows:** {duplicates_count(df)}")
 
     # Missing value preview
@@ -749,7 +750,7 @@ with tab_eda:
                     imp[cat_cols] = imp[cat_cols].ffill()
                 elif cat_method == "Backward fill":
                     imp[cat_cols] = imp[cat_cols].bfill()
-            st.dataframe(imp.head(20), use_container_width=True)
+            safe_dataframe(imp.head(20), use_container_width=True)
 
     # encoding & scaling recommendations
     st.markdown("### Preprocessing recommendations")
@@ -758,14 +759,14 @@ with tab_eda:
         st.markdown("**Categorical encoding**")
         enc_df = encoding_recommendations(df)
         if not enc_df.empty:
-            st.dataframe(enc_df, use_container_width=True)
+            safe_dataframe(enc_df, use_container_width=True)
         else:
             st.info("No categorical columns detected.")
     with c2:
         st.markdown("**Numeric scaling**")
         scale_df = scaling_recommendations(df)
         if not scale_df.empty:
-            st.dataframe(scale_df, use_container_width=True)
+            safe_dataframe(scale_df, use_container_width=True)
         else:
             st.info("No numeric columns detected.")
 
@@ -775,14 +776,14 @@ with tab_eda:
     utype = types.get(ucol, "categorical")
     if utype == "numeric":
         st.markdown("**Numeric summary & plots**")
-        st.dataframe(continuous_summary(df[ucol]).to_frame(name=ucol), use_container_width=True)
+        safe_dataframe(continuous_summary(df[ucol]).to_frame(name=ucol), use_container_width=True)
         c1, c2 = st.columns(2)
         with c1: st.pyplot(plot_hist_kde(df[ucol], ucol), use_container_width=True)
         with c2: st.pyplot(plot_box(df[ucol], ucol), use_container_width=True)
     elif utype in ("categorical","text"):
         st.markdown("**Categorical summary & counts**")
         summ, counts = categorical_summary(df[ucol])
-        st.dataframe(summ.to_frame(name=ucol), use_container_width=True)
+        safe_dataframe(summ.to_frame(name=ucol), use_container_width=True)
         st.pyplot(plot_counts(df[ucol], ucol), use_container_width=True)
     elif utype == "datetime":
         st.info("Datetime column — choose a numeric column in Bivariate to plot over time.")
