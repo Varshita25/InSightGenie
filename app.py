@@ -27,10 +27,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Configure Google Gemini API
 try:
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        st.error("GOOGLE_API_KEY not found in environment variables")
-        st.stop()
+        # Fallback to the new provided key
+        api_key = "AIzaSyDfitBn1Nyr--00-rq_tz_VRQM6uhJk4Yg"
     genai.configure(api_key=api_key)
 except Exception as e:
     st.error(f"Error configuring Google AI: {str(e)}")
@@ -44,7 +44,7 @@ def gpt_insights(df_subset: pd.DataFrame, section: str = "Overview") -> str:
     # We rename the argument to df_subset to avoid confusion with the global df.
     df = df_subset 
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        from core.gemini_helper import ask_gemini as _ask
         
         # Create context based on section
         if section == "Overview":
@@ -86,8 +86,7 @@ def gpt_insights(df_subset: pd.DataFrame, section: str = "Overview") -> str:
             context = "Provide a general summary of the dataset."
 
         # Generate response
-        response = model.generate_content(context)
-        return response.text
+        return _ask(context)
         
     except Exception as e:
         return f"GPT insights unavailable: {str(e)}"
@@ -129,10 +128,15 @@ from core.safeops import safe_dataframe
 from core.exporter import build_pdf, build_ppt
 from core.hypothesis import generate_hypotheses as _core_generate_hypotheses
 
-# Cached wrapper for speed
+# Cached wrapper (Renamed to v2 to force cache invalidation)
 @st.cache_data(show_spinner=False)
-def cached_generate_hypotheses(df, n=5, alpha=0.05):
+def v2_cached_generate_hypotheses(df, n=5, alpha=0.05):
     return _core_generate_hypotheses(df, n=n, alpha=alpha)
+
+from core.qa import suggest_questions as _core_suggest_questions
+@st.cache_data(show_spinner=False)
+def cached_suggest_questions(df):
+    return _core_suggest_questions(df)
 
 # ---------------- App setup ----------------
 load_dotenv()
@@ -153,13 +157,13 @@ load_css()
 
 # Simple Hero Section
 st.markdown("""
-    <div style="text-align: center; padding: 3rem 0;">
-        <h1 class="gradient-text" style="font-size: 4rem !important; margin-bottom: 1rem;">InSightGenie</h1>
-        <p style="color: #94a3b8; font-size: 1.4rem; max-width: 800px; margin: 0 auto; line-height: 1.6;">
-            The next generation of data analysis. Transform raw datasets into 
-            <span style="color: #f8fafc; font-weight: 600;">actionable intelligence</span> with AI-driven precision.
-        </p>
-    </div>
+<div style="text-align: center; padding: 2rem 0; margin-bottom: 1rem;">
+    <h1 class="gradient-text" style="font-size: 3.5rem !important; margin-bottom: 0.5rem; line-height: 1.1;">InSightGenie</h1>
+    <p style="color: #94a3b8; font-size: 1.2rem; max-width: 800px; margin: 0 auto; line-height: 1.3;">
+        Turn <span style="color: #f8fafc; font-weight: 600;">Raw Data</span> into 
+        <span style="color: #f8fafc; font-weight: 600;">Actionable Insights</span> – Instantly
+    </p>
+</div>
 """, unsafe_allow_html=True)
 
 sns.set(style="whitegrid")
@@ -170,11 +174,11 @@ def small_plt_style(fig: plt.Figure):
     """Apply compact fonts to matplotlib figures for a denser UI."""
     try:
         for ax in fig.axes:
-            ax.title.set_fontsize(10)
-            ax.xaxis.label.set_fontsize(9)
-            ax.yaxis.label.set_fontsize(9)
+            ax.title.set_fontsize(8)
+            ax.xaxis.label.set_fontsize(7)
+            ax.yaxis.label.set_fontsize(7)
             for lbl in ax.get_xticklabels() + ax.get_yticklabels():
-                lbl.set_fontsize(8)
+                lbl.set_fontsize(6)
     except Exception:
         pass
     return fig
@@ -531,14 +535,14 @@ def categorical_summary(s: pd.Series):
 # plotting helpers (compact)
 def plot_hist_kde(s: pd.Series, name: str):
     x = pd.to_numeric(s, errors="coerce").dropna()
-    fig, ax = plt.subplots(figsize=(5.6, 3.5))
+    fig, ax = plt.subplots(figsize=(4.2, 2.8))
     if x.empty:
         ax.text(0.5, 0.5, f"No numeric values in {name}", ha="center", va="center")
         return fig
-    sns.histplot(x, bins=20, kde=True, ax=ax, color="#6366f1", alpha=0.7)
-    ax.set_title(f"{name} Distribution", fontsize=12, fontweight='bold', pad=15)
-    ax.set_xlabel(name, fontsize=10)
-    ax.set_ylabel("Frequency", fontsize=10)
+    sns.histplot(x, bins=20, kde=True, ax=ax, color="#ff7e7e", alpha=0.8)
+    ax.set_title(f"{name} Distribution", fontsize=9, fontweight='bold', pad=8)
+    ax.set_xlabel(name, fontsize=8)
+    ax.set_ylabel("Frequency", fontsize=8)
     sns.despine()
     fig.tight_layout()
     fig = small_plt_style(fig)
@@ -546,26 +550,33 @@ def plot_hist_kde(s: pd.Series, name: str):
 
 def plot_box(s: pd.Series, name: str):
     x = pd.to_numeric(s, errors="coerce").dropna()
-    fig, ax = plt.subplots(figsize=(5.2, 2.8))
+    fig, ax = plt.subplots(figsize=(4.2, 2.2))
     if x.empty:
         ax.text(0.5, 0.5, f"No numeric values in {name}", ha="center", va="center")
         return fig
-    sns.boxplot(x=x, ax=ax, color="#a855f7", width=0.5)
-    ax.set_title(f"{name} Boxplot", fontsize=12, fontweight='bold', pad=15)
-    ax.set_xlabel(name, fontsize=10)
+    sns.boxplot(x=x, ax=ax, color="#9b59b6", width=0.5)
+    ax.set_title(f"{name} Boxplot", fontsize=9, fontweight='bold', pad=8)
+    ax.set_xlabel(name, fontsize=8)
     sns.despine()
     fig.tight_layout()
     fig = small_plt_style(fig)
     return fig
 
 def plot_counts(s: pd.Series, name: str):
-    c = s.astype(str).value_counts(dropna=False).head(20)
-    fig, ax = plt.subplots(figsize=(5.6, 3.5))
-    sns.barplot(x=c.index, y=c.values, ax=ax, palette="magma")
-    ax.set_title(f"Top Categories: {name}", fontsize=12, fontweight='bold', pad=15)
+    # Clean up labels if they are timestamps
+    if pd.api.types.is_datetime64_any_dtype(s):
+        c = s.dt.date.value_counts(dropna=False).head(20)
+    else:
+        # Check if the index strings look like timestamps and clean them
+        c = s.astype(str).value_counts(dropna=False).head(20)
+        c.index = [x.split(' ')[0] if ' 00:00:00' in x else x for x in c.index]
+        
+    fig, ax = plt.subplots(figsize=(4.5, 3))
+    sns.barplot(x=c.index, y=c.values, ax=ax, palette="rocket")
+    ax.set_title(f"Top Categories: {name}", fontsize=9, fontweight='bold', pad=8)
     ax.set_xlabel("")
-    ax.set_ylabel("Count", fontsize=10)
-    plt.xticks(rotation=45, ha="right", fontsize=9)
+    ax.set_ylabel("Count", fontsize=8)
+    plt.xticks(rotation=45, ha="right", fontsize=7)
     sns.despine()
     fig.tight_layout()
     fig = small_plt_style(fig)
@@ -575,14 +586,14 @@ def plot_scatter_with_corr(x: pd.Series, y: pd.Series, xn: str, yn: str):
     xv = pd.to_numeric(x, errors="coerce")
     yv = pd.to_numeric(y, errors="coerce")
     m = xv.notna() & yv.notna()
-    fig, ax = plt.subplots(figsize=(5.6, 3.5))
+    fig, ax = plt.subplots(figsize=(4.5, 3))
     if m.sum() < 2:
         ax.text(0.5, 0.5, "Not enough numeric points", ha="center", va="center")
         return fig, np.nan
-    sns.regplot(x=xv[m], y=yv[m], ax=ax, scatter_kws={'s':20, 'alpha':0.6}, line_kws={'color':'#ec4899'})
+    sns.regplot(x=xv[m], y=yv[m], ax=ax, scatter_kws={'s':20, 'alpha':0.6}, line_kws={'color':'#ff7e7e'})
     r = float(np.corrcoef(xv[m], yv[m])[0,1]) if m.sum() >= 2 else np.nan
-    ax.set_title(f"{xn} vs {yn} (r≈{r:.2f})", fontsize=12, fontweight='bold', pad=15)
-    ax.set_xlabel(xn, fontsize=10); ax.set_ylabel(yn, fontsize=10)
+    ax.set_title(f"{xn} vs {yn} (r≈{r:.2f})", fontsize=9, fontweight='bold', pad=8)
+    ax.set_xlabel(xn, fontsize=8); ax.set_ylabel(yn, fontsize=8)
     sns.despine()
     fig.tight_layout()
     fig = small_plt_style(fig)
@@ -590,16 +601,16 @@ def plot_scatter_with_corr(x: pd.Series, y: pd.Series, xn: str, yn: str):
 
 def plot_bar_mean_by_cat(cat: pd.Series, num: pd.Series, catn: str, numn: str):
     g = pd.DataFrame({catn: cat, numn: pd.to_numeric(num, errors="coerce")}).dropna()
-    fig, ax = plt.subplots(figsize=(5.6, 3.5))
+    fig, ax = plt.subplots(figsize=(4.5, 3))
     if g.empty:
         ax.text(0.5, 0.5, "No valid rows after cleaning", ha="center", va="center")
         return fig
     m = g.groupby(catn)[numn].mean().sort_values(ascending=False).head(20)
-    sns.barplot(x=m.index, y=m.values, ax=ax, palette="viridis")
-    ax.set_title(f"Avg {numn} by {catn}", fontsize=12, fontweight='bold', pad=15)
+    sns.barplot(x=m.index, y=m.values, ax=ax, palette="flare")
+    ax.set_title(f"Avg {numn} by {catn}", fontsize=9, fontweight='bold', pad=8)
     ax.set_xlabel("")
-    ax.set_ylabel(f"Average {numn}", fontsize=10)
-    plt.xticks(rotation=45, ha="right", fontsize=9)
+    ax.set_ylabel(f"Average {numn}", fontsize=8)
+    plt.xticks(rotation=45, ha="right", fontsize=7)
     sns.despine()
     fig.tight_layout()
     fig = small_plt_style(fig)
@@ -610,13 +621,13 @@ def plot_stacked_counts(a: pd.Series, b: pd.Series, an: str, bn: str):
     if ct.shape[0] > 20:
         top = ct.sum(axis=1).sort_values(ascending=False).head(20).index
         ct = ct.loc[top]
-    fig, ax = plt.subplots(figsize=(6, 3.8))
-    ct.plot(kind="bar", stacked=True, ax=ax, cmap="Set3")
-    ax.set_title(f"{an} × {bn} Proportions", fontsize=12, fontweight='bold', pad=15)
+    fig, ax = plt.subplots(figsize=(4.8, 3.2))
+    ct.plot(kind="bar", stacked=True, ax=ax, cmap="rocket")
+    ax.set_title(f"{an} × {bn} Proportions", fontsize=9, fontweight='bold', pad=8)
     ax.set_xlabel("")
-    ax.set_ylabel("Count", fontsize=10)
-    plt.xticks(rotation=45, ha="right", fontsize=9)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+    ax.set_ylabel("Count", fontsize=8)
+    plt.xticks(rotation=45, ha="right", fontsize=7)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=7)
     sns.despine()
     fig.tight_layout()
     fig = small_plt_style(fig)
@@ -627,11 +638,10 @@ def plot_corr_heatmap(df: pd.DataFrame, cols: Optional[List[str]] = None):
     if nums.shape[1] < 2:
         return None
     c = nums.corr(numeric_only=True)
-    fig, ax = plt.subplots(figsize=(6, 4.5))
-    sns.heatmap(c, cmap="coolwarm", annot=True, fmt=".2f", ax=ax, annot_kws={"size": 8}, center=0)
-    ax.set_title("Correlation Matrix", fontsize=12, fontweight='bold', pad=15)
-    plt.xticks(fontsize=9)
-    plt.yticks(fontsize=9)
+    fig, ax = plt.subplots(figsize=(4.8, 3.8))
+    sns.heatmap(c, cmap="rocket_r", annot=True, fmt=".2f", ax=ax, annot_kws={"size": 7}, center=0)
+    ax.set_title("Correlation Matrix", fontsize=9, fontweight='bold', pad=8)
+    ax.tick_params(axis='both', which='major', labelsize=7)
     fig.tight_layout()
     fig = small_plt_style(fig)
     return fig
@@ -673,11 +683,11 @@ def _load_from_url(url: str):
 # ---------------- Sidebar: file / url loader ----------------
 with st.sidebar:
     st.markdown("""
-        <div style="text-align: center; padding: 1rem 0;">
-            <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Data Source</h2>
-            <p style="color: #64748b; font-size: 0.9rem;">Upload or connect your dataset</p>
-        </div>
-    """, unsafe_allow_html=True)
+<div style="text-align: center; padding: 1rem 0;">
+    <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Data Source</h2>
+    <p style="color: #64748b; font-size: 0.9rem;">Upload or connect your dataset</p>
+</div>
+""", unsafe_allow_html=True)
     
     file = st.file_uploader(
         "Upload CSV or Excel", 
@@ -712,27 +722,27 @@ with st.sidebar:
     if not file and not url:
         st.markdown("---")
         st.markdown("""
-            <div class="glass-card" style="padding: 1.2rem; margin-top: 1rem;">
-                <h4 style="margin: 0 0 0.8rem 0; color: #f8fafc; font-family: 'Outfit';">Quick Start</h4>
-                <p style="font-size: 0.9rem; color: #94a3b8; margin: 0; line-height: 1.5;">
-                    Unlock the full potential of your data:
-                </p>
-                <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
-                        <span style="color: #6366f1;">✦</span> Automated EDA
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
-                        <span style="color: #a855f7;">✦</span> AI-Powered Insights
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
-                        <span style="color: #ec4899;">✦</span> Statistical Engine
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
-                        <span style="color: #6366f1;">✦</span> Smart Export
-                    </div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+<div class="glass-card" style="padding: 1.2rem; margin-top: 1rem;">
+    <h4 style="margin: 0 0 0.8rem 0; color: #f8fafc; font-family: 'Outfit';">Quick Start</h4>
+    <p style="font-size: 0.9rem; color: #94a3b8; margin: 0; line-height: 1.5;">
+        Unlock the full potential of your data:
+    </p>
+    <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
+            <span style="color: #6366f1;">✦</span> Automated EDA
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
+            <span style="color: #a855f7;">✦</span> AI-Powered Insights
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
+            <span style="color: #ec4899;">✦</span> Statistical Engine
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1;">
+            <span style="color: #6366f1;">✦</span> Smart Export
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
     
     # Show dataset info if loaded
     if st.session_state.get('df') is not None:
@@ -741,21 +751,21 @@ with st.sidebar:
         info = st.session_state.info
         
         st.markdown(f"""
-            <div class="glass-card" style="padding: 1.2rem; margin-top: 0.5rem; border-left: 4px solid #10B981;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.8rem;">
-                    <span style="color: #94a3b8; font-size: 0.85rem;">Rows</span>
-                    <span style="color: #f8fafc; font-weight: 700;">{info['rows']:,}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.8rem;">
-                    <span style="color: #94a3b8; font-size: 0.85rem;">Columns</span>
-                    <span style="color: #f8fafc; font-weight: 700;">{info['cols']}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #94a3b8; font-size: 0.85rem;">Memory</span>
-                    <span style="color: #f8fafc; font-weight: 700;">{info['memory_mb']:.2f} MB</span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+<div class="glass-card" style="padding: 1.2rem; margin-top: 0.5rem; border-left: 4px solid #10B981;">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 0.8rem;">
+        <span style="color: #94a3b8; font-size: 0.85rem;">Rows</span>
+        <span style="color: #f8fafc; font-weight: 700;">{info['rows']:,}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 0.8rem;">
+        <span style="color: #94a3b8; font-size: 0.85rem;">Columns</span>
+        <span style="color: #f8fafc; font-weight: 700;">{info['cols']}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <span style="color: #94a3b8; font-size: 0.85rem;">Memory</span>
+        <span style="color: #f8fafc; font-weight: 700;">{info['memory_mb']:.2f} MB</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # Load data when a file is uploaded or URL is provided
 if file:
@@ -772,48 +782,46 @@ elif url:
             st.stop()
 elif st.session_state.df is None:  # No data loaded yet
     st.markdown("""
-        <div style="text-align: center; padding: 4rem 2rem;">
-            <h2 style="color: #f8fafc; margin-bottom: 1.5rem; font-size: 2.5rem;">Ready to Analyze Your Data?</h2>
-            <p style="color: #94a3b8; font-size: 1.2rem; max-width: 700px; margin: 0 auto 2.5rem auto; line-height: 1.6;">
-                Upload a CSV or Excel file, or paste a URL to get started with 
-                <span class="gradient-text">AI-powered data analysis</span>.
+<div style="text-align: center; padding: 1rem 2rem;">
+    <h2 style="color: #f8fafc; margin-bottom: 1.5rem; font-size: 2.5rem;">Turn Raw Data into Actionable Insights – Instantly</h2>
+    <p style="color: #94a3b8; font-size: 1.2rem; max-width: 700px; margin: 0 auto 2.5rem auto; line-height: 1.6;">
+        Upload a CSV or Excel file, or paste a URL to get started with 
+        <span class="gradient-text">AI-powered data analysis</span>.
+    </p>
+    <div style="margin-bottom: 3.5rem;">
+        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 1rem;">Don't have a file? Use our sample data from the sidebar.</p>
+    </div>
+    <div style="display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap;">
+        <div class="glass-card" style="width: 240px; text-align: left;">
+            <div style="background: var(--primary-gradient); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; font-size: 1.5rem;">
+                🧠
+            </div>
+            <h4 style="color: #f8fafc; margin-bottom: 0.8rem; font-size: 1.2rem;">AI Analysis</h4>
+            <p style="color: #94a3b8; font-size: 0.95rem; margin: 0; line-height: 1.5;">
+                Deep insights powered by Gemini 2.0 Flash.
             </p>
-            
-            <div style="margin-bottom: 3.5rem;">
-                <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 1rem;">Don't have a file? Use our sample data from the sidebar.</p>
-            </div>
-
-            <div style="display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap;">
-                <div class="glass-card" style="width: 240px; text-align: left;">
-                    <div style="background: var(--primary-gradient); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; font-size: 1.5rem;">
-                        🧠
-                    </div>
-                    <h4 style="color: #f8fafc; margin-bottom: 0.8rem; font-size: 1.2rem;">AI Analysis</h4>
-                    <p style="color: #94a3b8; font-size: 0.95rem; margin: 0; line-height: 1.5;">
-                        Deep insights powered by Gemini 2.0 Flash.
-                    </p>
-                </div>
-                <div class="glass-card" style="width: 240px; text-align: left;">
-                    <div style="background: var(--primary-gradient); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; font-size: 1.5rem;">
-                        📊
-                    </div>
-                    <h4 style="color: #f8fafc; margin-bottom: 0.8rem; font-size: 1.2rem;">Smart Viz</h4>
-                    <p style="color: #94a3b8; font-size: 0.95rem; margin: 0; line-height: 1.5;">
-                        Beautiful, auto-generated interactive charts.
-                    </p>
-                </div>
-                <div class="glass-card" style="width: 240px; text-align: left;">
-                    <div style="background: var(--primary-gradient); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; font-size: 1.5rem;">
-                        📝
-                    </div>
-                    <h4 style="color: #f8fafc; margin-bottom: 0.8rem; font-size: 1.2rem;">Export</h4>
-                    <p style="color: #94a3b8; font-size: 0.95rem; margin: 0; line-height: 1.5;">
-                        Professional PDF & PPT reports in one click.
-                    </p>
-                </div>
-            </div>
         </div>
-    """, unsafe_allow_html=True)
+        <div class="glass-card" style="width: 240px; text-align: left;">
+            <div style="background: var(--primary-gradient); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; font-size: 1.5rem;">
+                📊
+            </div>
+            <h4 style="color: #f8fafc; margin-bottom: 0.8rem; font-size: 1.2rem;">Smart Viz</h4>
+            <p style="color: #94a3b8; font-size: 0.95rem; margin: 0; line-height: 1.5;">
+                Beautiful, auto-generated interactive charts.
+            </p>
+        </div>
+        <div class="glass-card" style="width: 240px; text-align: left;">
+            <div style="background: var(--primary-gradient); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; font-size: 1.5rem;">
+                📝
+            </div>
+            <h4 style="color: #f8fafc; margin-bottom: 0.8rem; font-size: 1.2rem;">Export</h4>
+            <p style="color: #94a3b8; font-size: 0.95rem; margin: 0; line-height: 1.5;">
+                Professional PDF & PPT reports in one click.
+            </p>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
     st.stop()
 
 # Create profile and detect types if data is loaded
@@ -848,13 +856,39 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
 
-# ---------------- Tabs ----------------
-tab_overview, tab_eda, tab_hypotheses, tab_suggested, tab_qa, tab_export = st.tabs(
-    ["Overview", "EDA Studio", "Hypotheses", "Suggestions", "Q&A", "Export"]
-)
+# ---------------- Stateful Navigation ----------------
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = "Overview"
+
+# Custom CSS for the persistent nav bar
+st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] > div:has(button) {
+        display: flex;
+        justify-content: center;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Navigation Row
+nav_cols = st.columns([1,1,1,1,1,1])
+tabs = ["Overview", "EDA Studio", "Hypotheses", "Suggestions", "Q&A", "Export"]
+
+for i, tab_name in enumerate(tabs):
+    with nav_cols[i]:
+        # Highlight active tab using primary gradient
+        is_active = st.session_state["active_tab"] == tab_name
+        if st.button(tab_name, key=f"nav_{tab_name}", use_container_width=True, type="primary" if is_active else "secondary"):
+            st.session_state["active_tab"] = tab_name
+            st.rerun()
+
+st.markdown("---")
+
+# Assign tabs based on selection
+active_tab = st.session_state["active_tab"]
 
 # ---------------- Overview ----------------
-with tab_overview:
+if active_tab == "Overview":
     try:
         # Success banner with stats
         st.markdown(f"""
@@ -959,7 +993,7 @@ with tab_overview:
         st.error(f"Error in Overview tab: {e}")
 
 # ---------------- EDA Studio ----------------
-with tab_eda:
+elif active_tab == "EDA Studio":
     try:
         st.subheader("Exploratory Data Analysis (EDA) — Detailed")
 
@@ -1053,14 +1087,19 @@ with tab_eda:
         if utype == "numeric":
             st.markdown("**Numeric summary & plots**")
             safe_dataframe(continuous_summary(df[ucol]).to_frame(name=ucol), use_container_width=True)
-            c1, c2 = st.columns(2)
-            with c1: st.pyplot(plot_hist_kde(df[ucol], ucol), use_container_width=True)
-            with c2: st.pyplot(plot_box(df[ucol], ucol), use_container_width=True)
+            col1, col2 = st.columns(2)
+            with col1: 
+                st.pyplot(plot_hist_kde(df[ucol], ucol), use_container_width=True)
+            with col2: 
+                st.pyplot(plot_box(df[ucol], ucol), use_container_width=True)
         elif utype in ("categorical","text"):
             st.markdown("**Categorical summary & counts**")
             summ, counts = categorical_summary(df[ucol])
             safe_dataframe(summ.to_frame(name=ucol), use_container_width=True)
-            st.pyplot(plot_counts(df[ucol], ucol), use_container_width=True)
+            # Center and constrain categorical bar chart
+            c1, c2, c3 = st.columns([1, 3, 1])
+            with c2:
+                st.pyplot(plot_counts(df[ucol], ucol), use_container_width=True)
         elif utype == "datetime":
             st.info("Datetime column — choose a numeric column in Bivariate to plot over time.")
         else:
@@ -1071,42 +1110,59 @@ with tab_eda:
         bx = st.selectbox("X", options=df.columns.tolist(), key="bix")
         by = st.selectbox("Y", options=[c for c in df.columns if c != bx], key="biy")
         xk, yk = types.get(bx, "categorical"), types.get(by, "categorical")
-        if xk == "numeric" and yk == "numeric":
-            fig, r = plot_scatter_with_corr(df[bx], df[by], bx, by)
-            st.pyplot(fig, use_container_width=True)
-            if _HAS_SCIPY:
-                try:
-                    xv = pd.to_numeric(df[bx], errors="coerce"); yv = pd.to_numeric(df[by], errors="coerce")
-                    m = xv.notna() & yv.notna()
-                    if m.sum() >= 3:
-                        _, p = spstats.pearsonr(xv[m].values, yv[m].values)
-                        st.caption(f"Pearson r≈{r:.2f}, p≈{p:.3g}")
-                except Exception:
-                    pass
-        elif xk in ("categorical","text") and yk == "numeric":
-            st.pyplot(plot_bar_mean_by_cat(df[bx], df[by], bx, by), use_container_width=True)
-        elif xk == "numeric" and yk in ("categorical","text"):
-            st.pyplot(plot_bar_mean_by_cat(df[by], df[bx], by, bx), use_container_width=True)
-        elif xk in ("categorical","text") and yk in ("categorical","text"):
-            st.pyplot(plot_stacked_counts(df[bx], df[by], bx, by), use_container_width=True)
-        elif xk == "datetime" and yk == "numeric":
-            d = pd.to_datetime(df[bx], errors="coerce"); yv = pd.to_numeric(df[by], errors="coerce")
-            g = pd.DataFrame({"_d": d, by: yv}).dropna()
-            if g.empty:
-                st.warning("No rows after cleaning for line plot.")
+        # Centering bivariate plots
+        c1, c2, c3 = st.columns([0.5, 3, 0.5])
+        with c2:
+            if xk == "numeric" and yk == "numeric":
+                fig, r = plot_scatter_with_corr(df[bx], df[by], bx, by)
+                st.pyplot(fig, use_container_width=True)
+                if _HAS_SCIPY:
+                    try:
+                        xv = pd.to_numeric(df[bx], errors="coerce"); yv = pd.to_numeric(df[by], errors="coerce")
+                        m = xv.notna() & yv.notna()
+                        if m.sum() >= 3:
+                            _, p = spstats.pearsonr(xv[m].values, yv[m].values)
+                            st.caption(f"Pearson r≈{r:.2f}, p≈{p:.3g}")
+                    except Exception:
+                        pass
+            elif xk in ("categorical","text") and yk == "numeric":
+                st.pyplot(plot_bar_mean_by_cat(df[bx], df[by], bx, by), use_container_width=True)
+            elif xk == "numeric" and yk in ("categorical","text"):
+                st.pyplot(plot_bar_mean_by_cat(df[by], df[bx], by, bx), use_container_width=True)
+            elif xk in ("categorical","text") and yk in ("categorical","text"):
+                st.pyplot(plot_stacked_counts(df[bx], df[by], bx, by), use_container_width=True)
+            elif xk == "datetime" and yk == "numeric":
+                d = pd.to_datetime(df[bx], errors="coerce"); yv = pd.to_numeric(df[by], errors="coerce")
+                g = pd.DataFrame({"_d": d, by: yv}).dropna()
+                if g.empty:
+                    st.warning("No rows after cleaning for line plot.")
+                else:
+                    # Clean up date labels for trend plot
+                    sers = g.groupby(pd.Grouper(key="_d", freq="M"))[by].mean()
+                    sers.index = [d.strftime('%Y-%m') for d in sers.index]
+                    st_line_from_series(sers, title=f"{by} trend over {bx}")
             else:
-                sers = g.groupby(pd.Grouper(key="_d", freq="M"))[by].mean()
-                st_line_from_series(sers, title=f"{by} trend over {bx}")
-        else:
-            st.info("Pick X and Y with compatible types.")
+                st.info("Pick X and Y with compatible types.")
 
         # Multivariate
         st.markdown("### Multivariate analysis — correlation heatmap")
         sel = st.multiselect("Select numeric columns (up to 12)", options=df.select_dtypes(include="number").columns.tolist())
-        if sel:
-            st.pyplot(plot_corr_heatmap(df, sel), use_container_width=True)
-        else:
-            st.pyplot(plot_corr_heatmap(df), use_container_width=True)
+        
+        # Center and constrain heatmap
+        c1, c2, c3 = st.columns([1, 2.5, 1])
+        with c2:
+            if sel:
+                fig = plot_corr_heatmap(df, sel)
+                if fig:
+                    st.pyplot(fig, use_container_width=True)
+                else:
+                    st.info("Select at least 2 numeric columns for a heatmap.")
+            else:
+                fig = plot_corr_heatmap(df)
+                if fig:
+                    st.pyplot(fig, use_container_width=True)
+                else:
+                    st.info("No numeric columns found for correlation analysis.")
 
         # GPT summary for EDA tab
         st.markdown("### GPT summary (EDA)")
@@ -1118,7 +1174,7 @@ with tab_eda:
         st.error(f"Error in EDA Studio: {e}")
 
 # ---------------- Hypotheses ----------------
-with tab_hypotheses:
+elif active_tab == "Hypotheses":
     try:
         st.markdown("""
             <div style="text-align: center; margin-bottom: 2rem;">
@@ -1133,14 +1189,22 @@ with tab_hypotheses:
 
         # Configuration section
         st.markdown("### Test Configuration")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            target = st.selectbox("Target Variable", options=df.columns.tolist())
-        with col2:
-            alpha = st.slider("Significance Level (Alpha)", 0.01, 0.10, 0.05, step=0.01)
-        with col3:
-            n = st.slider("Number of Tests", 1, 15, 5)
+        with st.form("hypo_config"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                target = st.selectbox("Target Variable", options=df.columns.tolist(), help="Primary variable for comparisons")
+            with col2:
+                alpha = st.select_slider("Significance Level (α)", options=[0.01, 0.05, 0.10], value=0.05, help="Risk level for Type I error")
+            with col3:
+                n = st.slider("Max Discovery Count", 1, 15, 5, help="Number of relationships to analyze")
+            
+            submit = st.form_submit_button("🚀 Start Statistical Engine", use_container_width=True)
+
+        if submit:
+            with st.spinner("Analyzing patterns and formulating hypotheses..."):
+                # Pass only relevant columns to speed up filtering
+                subset = df[[target] + [c for c in df.columns if c != target]]
+                st.session_state["hypo_results"] = v2_cached_generate_hypotheses(subset, n=n, alpha=alpha)
 
         # Info card
         st.markdown("""
@@ -1155,12 +1219,6 @@ with tab_hypotheses:
             </div>
         """, unsafe_allow_html=True)
 
-        # Run button with enhanced styling
-        if st.button("🚀 Start Statistical Engine", use_container_width=True):
-            with st.spinner("Analyzing patterns and formulating hypotheses..."):
-                # Pass only relevant columns to speed up filtering
-                subset = df[[target] + [c for c in df.columns if c != target]]
-                st.session_state["hypo_results"] = cached_generate_hypotheses(subset, n=n, alpha=alpha)
 
         if "hypo_results" not in st.session_state:
             st.markdown("""
@@ -1189,58 +1247,54 @@ with tab_hypotheses:
                 """, unsafe_allow_html=True)
                 
                 for i, h in enumerate(hypos, 1):
-                    # Test result card
-                    decision_color = "#10B981" if "reject" in h['decision'].lower() else "#F59E0B"
+                    # Safety check for old cache structure
+                    if 'steps' not in h:
+                        st.info("🔄 Update detected. Please click 'Start Statistical Engine' again to refresh your results.")
+                        del st.session_state["hypo_results"]
+                        st.stop()
+                        
+                    is_significant = "Reject" in h['steps']['Step 7: Conclusion']
+                    decision_color = "#10B981" if is_significant else "#F59E0B"
                     
+                    # 1. Header and Rationale
                     st.markdown(f"""
-                        <div class="glass-card" style="margin: 1.5rem 0; border: 1px solid rgba(255,255,255,0.1);">
-                            <h3 style="color: #f8fafc; margin: 0 0 1.5rem 0; font-family: 'Outfit';">
-                                {i}. {h['test']} — <span style="color: #6366f1;">{h['x']}</span> vs <span style="color: #ec4899;">{h['y']}</span>
-                            </h3>
-                            
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-                                <div style="background: rgba(99, 102, 241, 0.1); padding: 1.2rem; border-radius: 0.5rem; border-left: 4px solid #6366F1;">
-                                    <div style="color: #6366f1; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase;">Null Hypothesis (H₀)</div>
-                                    <div style="color: #cbd5e1; font-weight: 500; line-height: 1.4;">{h['H0']}</div>
-                                </div>
-                                <div style="background: rgba(6, 182, 212, 0.1); padding: 1.2rem; border-radius: 0.5rem; border-left: 4px solid #06B6D4;">
-                                    <div style="color: #06B6D4; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase;">Alternative (H₁)</div>
-                                    <div style="color: #cbd5e1; font-weight: 500; line-height: 1.4;">{h['H1']}</div>
-                                </div>
-                            </div>
-                            
-                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
-                                <div style="text-align: center; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.05);">
-                                    <div style="color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Method</div>
-                                    <div style="color: #f8fafc; font-weight: 600; margin-top: 0.4rem; font-size: 0.9rem;">{h['test']}</div>
-                                </div>
-                                <div style="text-align: center; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.05);">
-                                    <div style="color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Statistic</div>
-                                    <div style="color: #f8fafc; font-weight: 600; margin-top: 0.4rem; font-size: 0.9rem;">{h['statistic']:.3f}</div>
-                                </div>
-                                <div style="text-align: center; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.05);">
-                                    <div style="color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">P-Value</div>
-                                    <div style="color: #f8fafc; font-weight: 600; margin-top: 0.4rem; font-size: 0.9rem;">{h['p_value']:.4f}</div>
-                                </div>
-                                <div style="text-align: center; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.05);">
-                                    <div style="color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Verdict</div>
-                                    <div style="color: {decision_color}; font-weight: 700; margin-top: 0.4rem; font-size: 0.9rem;">{h['decision']}</div>
-                                </div>
-                            </div>
-                            
-                            <div style="background: rgba(16, 185, 129, 0.05); border-left: 4px solid #10B981; padding: 1.2rem; border-radius: 0.5rem;">
-                                <div style="color: #10B981; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase;">Synthesis</div>
-                                <div style="color: #cbd5e1; line-height: 1.5;">{h["interpretation"]}</div>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+<div class="glass-card" style="margin: 2rem 0; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem;">
+        <h3 style="color: #f8fafc; margin: 0; font-family: 'Outfit'; font-size: 1.4rem;">
+            {i}. {h['test_name']}
+        </h3>
+        <div style="background: {decision_color}; color: #020617; padding: 0.2rem 0.8rem; border-radius: 20px; font-weight: 700; font-size: 0.75rem;">
+            { 'SIGNIFICANT' if is_significant else 'NOT SIGNIFICANT' }
+        </div>
+    </div>
+    <div style="margin-bottom: 1.5rem; background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #6366f1;">
+        <p style="color: #cbd5e1; font-size: 0.9rem; margin: 0; line-height: 1.5;">
+            <strong>Scientific Rationale:</strong> {h['rationale']}
+        </p>
+    </div>
+    <div style="display: flex; justify-content: center; margin-bottom: 1.5rem;">
+        <div style="width: 100%; max-width: 450px; background: rgba(255,255,255,0.02); padding: 1rem; border-radius: 0.8rem; border: 1px solid rgba(255,255,255,0.05);">
+""", unsafe_allow_html=True)
 
-                    # Visualization
-                    try:
-                        with st.expander(f"View Visualization for Test {i}", expanded=False):
-                            smart_chart(h["x"], h["y"], df, chart_type=h["chart"])
-                    except Exception as e:
-                        st.warning(f"Chart error: {e}")
+                    # 2. Centered Visualization
+                    if h['chart'] == "scatter":
+                        st.pyplot(plot_scatter_with_corr(df[h['x']], df[h['y']], h['x'], h['y'])[0], use_container_width=True)
+                    elif h['chart'] == "boxplot":
+                        st.pyplot(plot_box(df[h['y']], h['y']), use_container_width=True)
+                    elif h['chart'] == "bar":
+                        st.pyplot(plot_counts(df[h['x']], h['x']), use_container_width=True)
+
+                    # 3. Final Conclusion
+                    st.markdown(f"""
+        </div>
+    </div>
+    <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; text-align: center;">
+        <p style="color: #94a3b8; font-size: 0.9rem; margin: 0; line-height: 1.5;">
+            <strong>Result:</strong> {h['steps']['Step 7: Conclusion']}
+        </p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
         # GPT summary
         st.markdown("<br>", unsafe_allow_html=True)
@@ -1252,10 +1306,7 @@ with tab_hypotheses:
                     st.info(insights)
                 else:
                     st.markdown(f"""
-                        <div style="background: #eff6ff;
-                                    border: 1px solid #bfdbfe;
-                                    border-radius: 0.5rem;
-                                    padding: 1.5rem;">
+                        <div class="glass-card" style="border: 1px solid rgba(99, 102, 241, 0.3); line-height: 1.6; color: #cbd5e1;">
                             {insights}
                         </div>
                     """, unsafe_allow_html=True)
@@ -1267,14 +1318,14 @@ with tab_hypotheses:
 
 
 # ---------------- Suggested Analyses ----------------
-with tab_suggested:
+elif active_tab == "Suggestions":
     try:
         st.markdown("""
-            <div style="text-align: center; margin-bottom: 2rem;">
-                <h2 style="font-size: 2rem; color: #2563eb; margin-bottom: 0.5rem;">
+            <div style="text-align: center; margin-bottom: 2rem; padding: 1rem 0;">
+                <h2 class="gradient-text" style="font-size: 2.5rem !important; margin-bottom: 0.5rem;">
                     Suggested Analyses
                 </h2>
-                <p style="color: #64748b; font-size: 1.1rem;">
+                <p style="color: #94a3b8; font-size: 1.1rem;">
                     AI-driven recommendations tailored to your dataset
                 </p>
             </div>
@@ -1289,16 +1340,10 @@ with tab_suggested:
                     <p style="color: #94a3b8; margin-bottom: 1.5rem;">Natural language explorations for your dataset:</p>
             """, unsafe_allow_html=True)
             for i, q in enumerate(qs, 1):
-                st.markdown(f"""
-                    <div style="background: rgba(99, 102, 241, 0.15);
-                                padding: 1rem;
-                                border-radius: 0.5rem;
-                                margin: 0.75rem 0;
-                                border-left: 4px solid #6366f1;">
-                        <span style="color: #6366f1; font-weight: 700; font-family: 'Outfit';">{i}.</span>
-                        <span style="color: #cbd5e1; margin-left: 0.5rem;"> {q}</span>
-                    </div>
-                """, unsafe_allow_html=True)
+                if st.button(q, key=f"q_{i}"):
+                    st.session_state["qa_q"] = q
+                    st.session_state["active_tab"] = "Q&A"
+                    st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
         # Recommended analysis pairs
@@ -1349,7 +1394,7 @@ with tab_suggested:
 
 
 # ---------------- Ask the Data (Q&A) ----------------
-with tab_qa:
+elif active_tab == "Q&A":
     try:
         st.markdown("""
             <div style="text-align: center; margin-bottom: 2rem;">
@@ -1364,57 +1409,67 @@ with tab_qa:
 
         # Suggested starter questions
         st.markdown("### Suggested Questions")
-        st.markdown("""
-            <p style="color: #64748b; margin-bottom: 1rem;">
-                Click any question below to auto-fill it, or type your own question.
-            </p>
-        """, unsafe_allow_html=True)
-        
-        suggested_qs = suggest_questions(df)
+        suggested_qs = cached_suggest_questions(df)
         cols = st.columns(2)
         for idx, q in enumerate(suggested_qs):
             with cols[idx % 2]:
-                if st.button(q, key=q, use_container_width=True):
+                if st.button(q, key=f"sug_{idx}", use_container_width=True):
                     st.session_state["qa_q"] = q
 
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Question input
-        st.markdown("### Your Question")
-        q = st.text_input(
-            "Type your question here:", 
-            value=st.session_state.get("qa_q", ""),
-            placeholder="e.g., What is the average value of column X?",
-            label_visibility="collapsed"
-        )
+        # Combined Input and Mode in a Form to prevent lag
+        with st.form("qa_form"):
+            st.markdown("### Ask your Question")
+            q_input = st.text_input(
+                "Enter your question:", 
+                value=st.session_state.get("qa_q", ""),
+                placeholder="e.g., What is the average value of price?",
+                label_visibility="collapsed"
+            )
+            
+            col_m1, col_m2, col_m3 = st.columns([2, 1, 1])
+            with col_m1:
+                mode = st.radio("Answer Mode", ["Fast (Local)", "Advanced (Gemini AI)"], horizontal=True)
+            with col_m2:
+                submit_qa = st.form_submit_button("🚀 Get Answer", use_container_width=True)
+            with col_m3:
+                clear_qa = st.form_submit_button("🗑️ Clear", use_container_width=True)
 
-        # Mode selection
-        st.markdown("### Answer Mode")
-        mode = st.radio(
-            "Choose how you want the answer:",
-            ["Simple (local)", "Gemini-powered"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+        if clear_qa:
+            st.session_state["qa_q"] = ""
+            if "qa_resp" in st.session_state: del st.session_state["qa_resp"]
+            if "last_q" in st.session_state: del st.session_state["last_q"]
 
-        if q:
-            st.markdown(f"""
-                <div class="glass-card" style="border-left: 4px solid #10b981; margin: 1.5rem 0;">
-                    <div style="color: #10b981; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase;">Active Inquiry</div>
-                    <div style="color: #f8fafc; font-size: 1.2rem; font-weight: 500; font-family: 'Outfit';">{q}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        if submit_qa or "qa_resp" in st.session_state:
+            active_q = q_input if submit_qa else st.session_state.get("last_q", q_input)
+            
+            if active_q:
+                st.markdown(f"""
+                    <div class="glass-card" style="border-left: 4px solid #10b981; margin: 1rem 0; padding: 1rem;">
+                        <div style="color: #10b981; font-size: 0.7rem; font-weight: 700; margin-bottom: 0.3rem; text-transform: uppercase;">Active Inquiry</div>
+                        <div style="color: #f8fafc; font-size: 1.1rem; font-weight: 500;">{active_q}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-            if mode == "Simple (local)":
-                if st.button("Get Answer", use_container_width=True) or "qa_resp" in st.session_state:
-                    if st.session_state.get("last_q") != q:
-                        with st.spinner("Analyzing your question..."):
-                            st.session_state["qa_resp"] = qa_answer(q, df)
-                            st.session_state["last_q"] = q
-                    
-                    resp = st.session_state["qa_resp"]
-                    if resp:
-                        try:
+                if submit_qa:
+                    with st.spinner("Processing..."):
+                        if "Fast" in mode:
+                            st.session_state["qa_resp"] = qa_answer(active_q, df)
+                            st.session_state["qa_mode"] = "local"
+                        else:
+                            try:
+                                dataset_preview = df.head(10).to_dict()
+                                st.session_state["qa_resp"] = ask_gemini(f"Analyst: {active_q}\nData: {dataset_preview}")
+                                st.session_state["qa_mode"] = "gemini"
+                            except Exception as e:
+                                st.error(f"Gemini failed: {e}")
+                        st.session_state["last_q"] = active_q
+
+                resp = st.session_state.get("qa_resp")
+                if resp:
+                    try:
+                        if st.session_state.get("qa_mode") == "local":
                             st.markdown("### Visualization")
                             chart_type = resp.get("type")
                             if chart_type in ["histogram", "boxplot", "scatter", "bar", "line", "table", "bar_rate"]:
@@ -1451,10 +1506,17 @@ with tab_qa:
                                     </div>
                                 </div>
                             """, unsafe_allow_html=True)
-                        except Exception as e:
-                            st.error(f"Local Q&A error: {e}")
-                    else:
-                        st.info("No local answer found for this question. Try rephrasing or use Gemini-powered mode.")
+                        else:
+                            st.markdown("### Gemini AI Answer")
+                            st.markdown(f"""
+                                <div class="glass-card" style="border: 1px solid rgba(99, 102, 241, 0.3); line-height: 1.6; color: #cbd5e1;">
+                                    {resp}
+                                </div>
+                            """, unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Display Error: {e}")
+                else:
+                    st.info("Please enter a question and click 'Get Answer'.")
 
             else:  # Gemini-powered
                 if st.button("Ask Gemini", use_container_width=True) or "gemini_resp" in st.session_state:
@@ -1487,7 +1549,7 @@ with tab_qa:
 
 
 # ---------------- Export ----------------
-with tab_export:
+elif active_tab == "Export":
     try:
         st.markdown("""
             <div style="text-align: center; margin-bottom: 2rem;">

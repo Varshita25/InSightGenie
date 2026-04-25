@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 
-sns.set_context("talk")
+sns.set_context("notebook")
 
 
-def _auto_fig(w=6, h=4):
+def _auto_fig(w=4.5, h=3.2):
     sns.set_style("whitegrid")
     fig, ax = plt.subplots(figsize=(w, h))
     return fig, ax
@@ -21,7 +21,7 @@ def numeric_histograms(df: pd.DataFrame, max_cols: int = 12) -> List[plt.Figure]
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:max_cols]
     for c in num_cols:
         fig, ax = _auto_fig(5, 3.5)
-        sns.histplot(df[c].dropna(), bins=30, kde=True, ax=ax, color="#6366f1")
+        sns.histplot(df[c].dropna(), bins=30, kde=True, ax=ax, color="#ff7e7e")
         ax.set_title(f"{c} Distribution", fontsize=12, fontweight='bold', pad=10)
         ax.set_xlabel(c, fontsize=10)
         ax.set_ylabel("Frequency", fontsize=10)
@@ -40,7 +40,7 @@ def categorical_bars(df: pd.DataFrame, max_cols: int = 12, top_k: int = 10) -> L
     for c in cat_cols:
         vc = df[c].astype(str).value_counts(dropna=False).head(top_k)
         fig, ax = _auto_fig(5, 3.5)
-        sns.barplot(x=vc.index, y=vc.values, ax=ax, palette="magma")
+        sns.barplot(x=vc.index, y=vc.values, ax=ax, palette="rocket")
         ax.set_title(f"Top {top_k}: {c}", fontsize=12, fontweight='bold', pad=10)
         ax.set_xticks(range(len(vc)))
         ax.set_xticklabels([str(x)[:12] for x in vc.index], rotation=45, ha="right", fontsize=9)

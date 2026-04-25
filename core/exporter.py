@@ -20,10 +20,10 @@ class UTF8PDF(FPDF):
     def sanitize_text(self, text):
         if not isinstance(text, str):
             text = str(text)
-        # Replace problematic characters with similar ASCII ones
-        text = text.encode('ascii', errors='replace').decode()
-        # Remove any remaining non-printable characters
-        text = ''.join(char for char in text if char.isprintable() or char in ['\n', '\r', '\t'])
+        # Specifically replace common non-latin-1 characters
+        text = text.replace('→', '->').replace('•', '*').replace('…', '...').replace('−', '-')
+        # Replace other problematic characters with similar ASCII ones
+        text = text.encode('latin-1', 'replace').decode('latin-1')
         return text
 
     def safe_cell(self, w, h, txt='', border=0, ln=0, align='', fill=False):
@@ -32,88 +32,85 @@ class UTF8PDF(FPDF):
     def safe_multi_cell(self, w, h, txt='', border=0, align='', fill=False):
         self.multi_cell(w, h, self.sanitize_text(txt), border, align, fill)
 
-def build_pdf(report_data: dict, title="Data Insights Report"):
+def build_pdf(report_data: dict, report_title="Data Insights Report"):
     try:
-        # Try UTF8 PDF first
         pdf = UTF8PDF()
-    except Exception as e:
-        print(f"Warning: Using standard PDF due to: {str(e)}")
+    except Exception:
         pdf = FPDF()
-    
-    def safe_write(func, *args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            print(f"Warning: Error in PDF generation: {str(e)}")
-            # Try to sanitize all string inputs
-            args = tuple(str(arg).encode('ascii', errors='replace').decode() if isinstance(arg, str) else arg for arg in args)
-            return func(*args, **kwargs)
     
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
     # Title
-    try:
-        pdf.set_font("DejaVu", "B", 24)
-    except Exception:
-        pdf.set_font("Arial", "B", 24)
-    pdf.safe_cell(0, 20, title, ln=True, align="C")
+    pdf.set_font("Arial", "B", 24)
+    pdf.safe_cell(0, 20, report_title, ln=True, align="C")
     pdf.ln(10)
     
-    # Dataset overview
+    # 1. Dataset Overview
     ov = report_data.get("overview", {})
-    try:
-        pdf.set_font("DejaVu", "B", 16)
-    except Exception:
-        pdf.set_font("Arial", "B", 16)
+    pdf.set_font("Arial", "B", 16)
     pdf.set_fill_color(240, 240, 240)
-    pdf.safe_cell(0, 10, "Dataset Overview", ln=True, fill=True)
+    pdf.safe_cell(0, 10, "1. Dataset Overview", ln=True, fill=True)
     pdf.ln(5)
-    try:
-        pdf.set_font("DejaVu", "", 12)
-    except Exception:
-        pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", size=12)
     pdf.safe_multi_cell(0, 8, txt=ov.get("summary", ""))
-    pdf.ln(8)
+    pdf.ln(5)
     
-    # Add dataset info if available
     if "dataset_name" in ov:
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 8, f"Dataset: {ov['dataset_name']}", ln=True)
-    if "shape" in ov:
-        pdf.cell(0, 8, f"Size: {ov['shape']}", ln=True)
+        pdf.safe_cell(0, 8, f"Dataset: {ov['dataset_name']}", ln=True)
+    
+    # 2. EDA Summary
     pdf.ln(5)
-
-    # EDA
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Exploratory Data Analysis", ln=True)
+    pdf.set_font("Arial", "B", 16)
+    pdf.safe_cell(0, 10, "2. Exploratory Data Analysis", ln=True, fill=True)
+    pdf.ln(5)
     pdf.set_font("Arial", size=11)
     for k, v in report_data.get("eda", {}).items():
-        pdf.multi_cell(0, 8, f"{k.title()}: " + "; ".join(v))
-    pdf.ln(4)
-
-    # Hypotheses
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Hypothesis Testing", ln=True)
-    pdf.set_font("Arial", size=11)
+        pdf.set_font("Arial", "B", 11)
+        pdf.safe_cell(0, 8, f"{k.title()}:", ln=True)
+        pdf.set_font("Arial", size=11)
+        pdf.safe_multi_cell(0, 8, "; ".join(v))
+    
+    # 3. Hypotheses
+    pdf.ln(10)
+    pdf.set_font("Arial", "B", 16)
+    pdf.safe_cell(0, 10, "3. Hypothesis Testing Results", ln=True, fill=True)
+    pdf.ln(5)
     for h in report_data.get("hypotheses", []):
-        pdf.multi_cell(0, 8, f"- {h['title']} ({h['test']}): {h['result']} → {h['interpretation']}")
-    pdf.ln(4)
+        pdf.set_font("Arial", "B", 12)
+        pdf.safe_cell(0, 8, f"- {h['title']}", ln=True)
+        pdf.set_font("Arial", size=11)
+        pdf.safe_multi_cell(0, 7, f"Test: {h['test']} | Result: {h['result']}")
+        pdf.safe_multi_cell(0, 7, f"Interpretation: {h['interpretation']}")
+        pdf.ln(3)
 
-    # Suggestions
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Suggested Analyses", ln=True)
+    # 4. AI Recommendations
+    pdf.ln(5)
+    pdf.set_font("Arial", "B", 16)
+    pdf.safe_cell(0, 10, "4. Suggested Next Steps", ln=True, fill=True)
+    pdf.ln(5)
     pdf.set_font("Arial", size=11)
     for s in report_data.get("suggestions", []):
-        pdf.multi_cell(0, 8, f"- {s}")
-    pdf.ln(4)
+        pdf.safe_multi_cell(0, 8, f"* {s}")
 
-    # Q&A
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Ask-the-Data Q&A", ln=True)
-    pdf.set_font("Arial", size=11)
-    for qa in report_data.get("qa", []):
-        pdf.multi_cell(0, 8, f"Q: {qa['q']}\nA: {qa['a']}\n")
+    # 5. Visualizations (Key Page)
+    if report_data.get("figures"):
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.safe_cell(0, 10, "5. Visual Data Evidence", ln=True, fill=True)
+        pdf.ln(10)
+        
+        for i, fig_path in enumerate(report_data["figures"]):
+            if os.path.exists(fig_path):
+                # Add 2 images per page
+                if i > 0 and i % 2 == 0:
+                    pdf.add_page()
+                try:
+                    pdf.image(fig_path, x=15, w=180)
+                    pdf.ln(5)
+                except Exception as e:
+                    pdf.safe_cell(0, 10, f"[Error adding figure {i}]", ln=True)
 
     # Save
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -121,84 +118,55 @@ def build_pdf(report_data: dict, title="Data Insights Report"):
     return tmp.name
 
 
-def build_ppt(report_data: dict, title="Data Insights Report"):
+def build_ppt(report_data: dict, report_title="Data Insights Report"):
     prs = Presentation()
 
-    # Title Slide
-    slide_layout = prs.slide_layouts[0]  # Title
-    slide = prs.slides.add_slide(slide_layout)
-    title = slide.shapes.title
-    title.text = title
+    # 1. Title Slide
+    slide = prs.slides.add_slide(prs.slide_layouts[0])
+    title_shape = slide.shapes.title
+    title_shape.text = report_title
     subtitle = slide.placeholders[1]
-    
-    # Add dataset info to title slide
     ov = report_data.get("overview", {})
-    subtitle_text = []
-    if "dataset_name" in ov:
-        subtitle_text.append(f"Dataset: {ov['dataset_name']}")
-    if "shape" in ov:
-        subtitle_text.append(f"Size: {ov['shape']}")
-    if subtitle_text:
-        subtitle.text = "\n".join(subtitle_text)
+    subtitle.text = f"Dataset: {ov.get('dataset_name', 'Unknown')}\nSize: {ov.get('shape', 'N/A')}\nCompiled via InSightGenie"
 
-    # Overview Slide
+    # 2. Overview Slide
     slide = prs.slides.add_slide(prs.slide_layouts[1])
     slide.shapes.title.text = "Dataset Overview"
     body = slide.placeholders[1]
-    overview_text = []
-    if "summary" in ov:
-        overview_text.append(ov["summary"])
-    if "dtypes" in ov:
-        overview_text.append("\nData Types:")
-        for col, dtype in ov["dtypes"].items():
-            overview_text.append(f"• {col}: {dtype}")
-    body.text = "\n".join(overview_text)
+    body.text = ov.get("summary", "No summary available.")
 
-    # EDA Slide
-    eda = report_data.get("eda", {})
+    # 3. EDA Insights
     slide = prs.slides.add_slide(prs.slide_layouts[1])
-    slide.shapes.title.text = "Exploratory Data Analysis"
+    slide.shapes.title.text = "Exploratory Insights"
     body = slide.placeholders[1]
-    lines = []
-    for k, v in eda.items():
-        lines.append(f"{k.title()}: " + "; ".join(v))
-    body.text = "\n".join(lines)
+    eda_lines = []
+    for k, v in report_data.get("eda", {}).items():
+        eda_lines.append(f"{k.title()}: " + "; ".join(v))
+    body.text = "\n".join(eda_lines)
 
-    # Hypotheses Slide
-    slide = prs.slides.add_slide(prs.slide_layouts[1])
-    slide.shapes.title.text = "Hypothesis Testing"
-    body = slide.placeholders[1]
-    body.text = "\n".join([f"{h['title']} ({h['test']}): {h['result']}" for h in report_data.get("hypotheses", [])])
+    # 4. Hypothesis Testing
+    hypos = report_data.get("hypotheses", [])
+    if hypos:
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        slide.shapes.title.text = "Statistical Hypotheses"
+        body = slide.placeholders[1]
+        body.text = "\n".join([f"{h['title']}: {h['result']}" for h in hypos[:8]])
 
-    # Suggestions Slide
+    # 5. Visualizations
+    for i, fig_path in enumerate(report_data.get("figures", [])):
+        if os.path.exists(fig_path):
+            slide = prs.slides.add_slide(prs.slide_layouts[5])  # Title Only
+            slide.shapes.title.text = f"Visualization Proof {i+1}"
+            left, top, width, height = Inches(1), Inches(1.5), Inches(8), Inches(5)
+            slide.shapes.add_picture(fig_path, left, top, width, height)
+
+    # 6. AI Suggestions
     slide = prs.slides.add_slide(prs.slide_layouts[1])
-    slide.shapes.title.text = "Suggested Analyses"
+    slide.shapes.title.text = "AI Suggested Analyses"
     body = slide.placeholders[1]
     body.text = "\n".join(report_data.get("suggestions", []))
 
-    # Q&A Slides (one question per slide for better readability)
-    for qa in report_data.get("qa", []):
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-        slide.shapes.title.text = "Q&A Insights"
-        body = slide.placeholders[1]
-        text = f"Question:\n{qa.get('q', '')}\n\nAnswer:\n{qa.get('a', '')}"
-        body.text = text
-        
-    # Save the presentation
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
-    prs.save(tmp.name)
-    return tmp.name
-    body = slide.placeholders[1]
-    body.text = "\n".join([f"Q: {qa['q']}\nA: {qa['a']}" for qa in report_data.get("qa", [])])
-
-    # Figures (if any)
-    for fig in report_data.get("figures", []):
-        if os.path.exists(fig):
-            slide = prs.slides.add_slide(prs.slide_layouts[5])  # Title Only
-            slide.shapes.title.text = "Visualization"
-            left, top, width, height = Inches(1), Inches(1.5), Inches(7.5), Inches(4.5)
-            slide.shapes.add_picture(fig, left, top, width, height)
-
+    # Save
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     prs.save(tmp.name)
     return tmp.name
