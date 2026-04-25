@@ -141,7 +141,7 @@ h1, h2, h3, .main h1, .main h2, .main h3 {
 /* Hide Streamlit elements for cleaner look */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
+/* header {visibility: hidden;} - Restored to allow sidebar toggle */
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
@@ -156,4 +156,40 @@ header {visibility: hidden;}
 }
 ::-webkit-scrollbar-thumb:hover {
     background: #475569;
+}
+
+/* ============================================
+   Mobile Responsiveness 
+   ============================================ */
+@media (max-width: 768px) {
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-top: 1rem !important;
+    }
+    
+    h1 {
+        font-size: 2.2rem !important;
+    }
+    
+    .gradient-text {
+        font-size: 2.2rem !important;
+    }
+
+    /* Stack navigation buttons on mobile */
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+    }
+
+    /* Ensure cards and metrics take full width */
+    .glass-card {
+        padding: 1rem !important;
+        margin-bottom: 1rem !important;
+    }
+
+    /* Adjust metrics for mobile */
+    [data-testid="stMetric"] {
+        padding: 1rem !important;
+    }
 }

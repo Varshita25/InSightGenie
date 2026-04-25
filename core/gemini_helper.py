@@ -7,9 +7,8 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 if not api_key:
-    # Use the key you provided directly
-    # Use the new key you provided
-    api_key = "AIzaSyDfitBn1Nyr--00-rq_tz_VRQM6uhJk4Yg"
+    # Placeholder for local testing if .env is missing
+    api_key = "YOUR_GOOGLE_API_KEY_HERE"
 
 genai.configure(api_key=api_key)
 

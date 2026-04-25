@@ -29,8 +29,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 try:
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        # Fallback to the new provided key
-        api_key = "AIzaSyDfitBn1Nyr--00-rq_tz_VRQM6uhJk4Yg"
+        st.error("API Key not found. Please set GOOGLE_API_KEY in your .env or Streamlit Secrets.")
+        st.stop()
     genai.configure(api_key=api_key)
 except Exception as e:
     st.error(f"Error configuring Google AI: {str(e)}")
@@ -143,7 +143,7 @@ load_dotenv()
 st.set_page_config(
     page_title="InSightGenie - AI Data Insight Assistant", 
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # Load custom CSS
@@ -158,7 +158,7 @@ load_css()
 # Simple Hero Section
 st.markdown("""
 <div style="text-align: center; padding: 2rem 0; margin-bottom: 1rem;">
-    <h1 class="gradient-text" style="font-size: 3.5rem !important; margin-bottom: 0.5rem; line-height: 1.1;">InSightGenie</h1>
+    <h1 class="gradient-text" style="font-size: 3.5rem; margin-bottom: 0.5rem; line-height: 1.1;">InSightGenie</h1>
     <p style="color: #94a3b8; font-size: 1.2rem; max-width: 800px; margin: 0 auto; line-height: 1.3;">
         Turn <span style="color: #f8fafc; font-weight: 600;">Raw Data</span> into 
         <span style="color: #f8fafc; font-weight: 600;">Actionable Insights</span> – Instantly
