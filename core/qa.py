@@ -11,7 +11,7 @@ api_key = os.getenv("GOOGLE_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 else:
-    print("⚠️ Warning: GOOGLE_API_KEY not set. Gemini Q&A will not work.")
+    print("Warning: GOOGLE_API_KEY not set. Gemini Q&A will not work.")
 
 # ---------------- Helper: Gemini ----------------
 def ask_gemini(prompt: str, model="gemini-1.5-flash", temperature=0.3):
@@ -19,7 +19,7 @@ def ask_gemini(prompt: str, model="gemini-1.5-flash", temperature=0.3):
     Query Gemini for natural language explanations.
     """
     if not api_key:
-        return "⚠️ Gemini API Key missing. Please set GEMINI_API_KEY in your environment."
+        return "Gemini API Key missing. Please set GEMINI_API_KEY in your environment."
     try:
         response = genai.GenerativeModel(model).generate_content(
             prompt,
@@ -27,7 +27,7 @@ def ask_gemini(prompt: str, model="gemini-1.5-flash", temperature=0.3):
         )
         return response.text
     except Exception as e:
-        return f"⚠️ Gemini API Error: {str(e)}"
+        return f"Gemini API Error: {str(e)}"
 
 # ---------------- Helper: Detect Target Column ----------------
 def _detect_target(df: pd.DataFrame) -> str | None:

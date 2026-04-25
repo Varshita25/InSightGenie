@@ -28,19 +28,30 @@ def _info_from_df(df: pd.DataFrame) -> Dict[str, object]:
 
 
 def _load_csv_excel(file) -> Tuple[pd.DataFrame, Dict[str, object]]:
+    if hasattr(file, "seek"):
+        file.seek(0)
     name = getattr(file, "name", "uploaded")
     ext = os.path.splitext(name)[1].lower()
-    if ext in [".xlsx", ".xls"]:
-        df = pd.read_excel(file)
-    else:
-        # robust CSV read
-        b = file.read() if hasattr(file, "read") else file
-        df = pd.read_csv(io.BytesIO(b)) if isinstance(b, (bytes, bytearray)) else pd.read_csv(file)
+    try:
+        if ext in [".xlsx", ".xls"]:
+            df = pd.read_excel(file)
+        else:
+            df = pd.read_csv(file)
+    except Exception as e:
+        # Fallback for weird encodings or formats
+        if hasattr(file, "seek"):
+            file.seek(0)
+        try:
+            df = pd.read_csv(file, encoding='latin1')
+        except:
+            raise e
     return df, _info_from_df(df)
 
 
 def _save_temp_file(file) -> str:
     # persist uploaded binary to a temp path for SQL/PDF libs
+    if hasattr(file, "seek"):
+        file.seek(0)
     data = file.read()
     suffix = os.path.splitext(getattr(file, "name", "upload.bin"))[1]
     fd, path = tempfile.mkstemp(suffix=suffix)

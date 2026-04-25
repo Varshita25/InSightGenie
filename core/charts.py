@@ -10,8 +10,9 @@ import streamlit as st
 sns.set_context("talk")
 
 
-def _auto_fig():
-    fig, ax = plt.subplots(figsize=(6, 4))
+def _auto_fig(w=6, h=4):
+    sns.set_style("whitegrid")
+    fig, ax = plt.subplots(figsize=(w, h))
     return fig, ax
 
 
@@ -19,11 +20,12 @@ def numeric_histograms(df: pd.DataFrame, max_cols: int = 12) -> List[plt.Figure]
     figs = []
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:max_cols]
     for c in num_cols:
-        fig, ax = _auto_fig()
-        ax.hist(df[c].dropna().values, bins=30)
-        ax.set_title(f"{c} – Histogram")
-        ax.set_xlabel(c)
-        ax.set_ylabel("Count")
+        fig, ax = _auto_fig(5, 3.5)
+        sns.histplot(df[c].dropna(), bins=30, kde=True, ax=ax, color="#6366f1")
+        ax.set_title(f"{c} Distribution", fontsize=12, fontweight='bold', pad=10)
+        ax.set_xlabel(c, fontsize=10)
+        ax.set_ylabel("Frequency", fontsize=10)
+        fig.tight_layout()
         figs.append(fig)
     return figs
 
@@ -36,13 +38,15 @@ def categorical_bars(df: pd.DataFrame, max_cols: int = 12, top_k: int = 10) -> L
     ]
     cat_cols = cat_cols[:max_cols]
     for c in cat_cols:
-        vc = df[c].astype("category").value_counts(dropna=False).head(top_k)
-        fig, ax = _auto_fig()
-        ax.bar([str(x) for x in vc.index], vc.values)
-        ax.set_title(f"{c} – Top {top_k} categories")
+        vc = df[c].astype(str).value_counts(dropna=False).head(top_k)
+        fig, ax = _auto_fig(5, 3.5)
+        sns.barplot(x=vc.index, y=vc.values, ax=ax, palette="magma")
+        ax.set_title(f"Top {top_k}: {c}", fontsize=12, fontweight='bold', pad=10)
         ax.set_xticks(range(len(vc)))
-        ax.set_xticklabels([str(x)[:16] for x in vc.index], rotation=45, ha="right")
-        ax.set_ylabel("Count")
+        ax.set_xticklabels([str(x)[:12] for x in vc.index], rotation=45, ha="right", fontsize=9)
+        ax.set_ylabel("Count", fontsize=10)
+        ax.set_xlabel("")
+        fig.tight_layout()
         figs.append(fig)
     return figs
 
@@ -52,9 +56,13 @@ def correlation_heatmap(df: pd.DataFrame):
     if num_df.shape[1] < 2:
         return None
     corr = num_df.corr(numeric_only=True)
-    fig, ax = plt.subplots(figsize=(6.5, 5.5))
-    sns.heatmap(corr, ax=ax)
-    ax.set_title("Correlation Heatmap")
+    # Reduced size as requested
+    fig, ax = plt.subplots(figsize=(4.5, 3.5)) 
+    sns.heatmap(corr, ax=ax, annot=True, fmt=".2f", cmap="vlag", center=0, annot_kws={"size": 8})
+    ax.set_title("Correlation Map", fontsize=12, fontweight='bold', pad=10)
+    plt.xticks(fontsize=9)
+    plt.yticks(fontsize=9)
+    fig.tight_layout()
     return fig
 
 

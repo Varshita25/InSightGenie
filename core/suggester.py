@@ -22,6 +22,7 @@ def recommend_pairs(df: pd.DataFrame, target_hint: str | None = None, max_pairs:
     """
     t = infer_types(df)
     cols = list(df.columns)
+    n_cols = len(cols)
 
     # Try to guess binary target
     lower = [c.lower() for c in cols]
@@ -44,6 +45,7 @@ def recommend_pairs(df: pd.DataFrame, target_hint: str | None = None, max_pairs:
     # 1) Target rate by categorical
     if target is not None and df[target].dropna().nunique() == 2:
         for c in cols:
+            if len(ideas) >= max_pairs * 2: break
             if c == target:
                 continue
             if t[c] in ("categorical", "text"):
@@ -55,46 +57,56 @@ def recommend_pairs(df: pd.DataFrame, target_hint: str | None = None, max_pairs:
                 })
 
     # 2) Numeric vs Categorical → box or bar
-    for cat in cols:
-        if t[cat] in ("categorical", "text"):
-            for num in cols:
-                if t[num] == "numeric" and num != target:
-                    ideas.append({
-                        "title": f"Distribution of {num} by {cat}",
-                        "chart": "boxplot", "x": num, "y": cat,
-                        "agg": None,
-                        "why": f"Shows how {num} varies across {cat} groups."
-                    })
-                    ideas.append({
-                        "title": f"Average {num} by {cat}",
-                        "chart": "bar", "x": cat, "y": num,
-                        "agg": "mean",
-                        "why": f"Compare mean {num} across categories of {cat}."
-                    })
+    # Use a limited search for efficiency if there are many columns
+    max_cats = 10
+    max_nums = 10
+    cats = [c for c in cols if t[c] in ("categorical", "text")][:max_cats]
+    nums = [c for c in cols if t[c] == "numeric" and c != target][:max_nums]
+    
+    for cat in cats:
+        if len(ideas) >= max_pairs * 3: break
+        for num in nums:
+            if len(ideas) >= max_pairs * 3: break
+            ideas.append({
+                "title": f"Distribution of {num} by {cat}",
+                "chart": "boxplot", "x": num, "y": cat,
+                "agg": None,
+                "why": f"Shows how {num} varies across {cat} groups."
+            })
+            ideas.append({
+                "title": f"Average {num} by {cat}",
+                "chart": "bar", "x": cat, "y": num,
+                "agg": "mean",
+                "why": f"Compare mean {num} across categories of {cat}."
+            })
 
     # 3) Numeric vs Numeric → scatter
-    nums = [c for c in cols if t[c] == "numeric"]
-    for i in range(len(nums)):
-        for j in range(i+1, len(nums)):
-            a, b = nums[i], nums[j]
-            ideas.append({
-                "title": f"{a} vs {b}",
-                "chart": "scatter", "x": a, "y": b,
-                "agg": None,
-                "why": f"Check linear/non-linear relationship between {a} and {b}."
-            })
+    if len(ideas) < max_pairs * 3:
+        for i in range(min(len(nums), 10)):
+            if len(ideas) >= max_pairs * 4: break
+            for j in range(i+1, min(len(nums), 10)):
+                if len(ideas) >= max_pairs * 4: break
+                a, b = nums[i], nums[j]
+                ideas.append({
+                    "title": f"{a} vs {b}",
+                    "chart": "scatter", "x": a, "y": b,
+                    "agg": None,
+                    "why": f"Check linear/non-linear relationship between {a} and {b}."
+                })
 
     # 4) Categorical vs Categorical → stacked bar
-    cats = [c for c in cols if t[c] in ("categorical", "text")]
-    for i in range(len(cats)):
-        for j in range(i+1, len(cats)):
-            a, b = cats[i], cats[j]
-            ideas.append({
-                "title": f"{a} × {b}",
-                "chart": "bar", "x": a, "y": b,
-                "agg": "count",
-                "why": f"See joint distribution of {a} and {b}."
-            })
+    if len(ideas) < max_pairs * 3:
+        for i in range(min(len(cats), 10)):
+            if len(ideas) >= max_pairs * 5: break
+            for j in range(i+1, min(len(cats), 10)):
+                if len(ideas) >= max_pairs * 5: break
+                a, b = cats[i], cats[j]
+                ideas.append({
+                    "title": f"{a} × {b}",
+                    "chart": "bar", "x": a, "y": b,
+                    "agg": "count",
+                    "why": f"See joint distribution of {a} and {b}."
+                })
 
     # 5) Datetime vs Numeric → monthly trend
     dts = [c for c in cols if t[c] == "datetime"]
@@ -119,6 +131,7 @@ def recommend_pairs(df: pd.DataFrame, target_hint: str | None = None, max_pairs:
         if len(out) >= max_pairs:
             break
     return out
+
 
 def beginner_questions(df: pd.DataFrame) -> List[str]:
     """
